@@ -1,61 +1,77 @@
 const database = require('../models/database');
-const uuid = require('uuid');
+const jwt = require('jsonwebtoken');
 
 const controllers = {};
+
+const timestamp = new Date().toISOString();
 
 controllers.getOrderById = (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.userId;
 
         const order = database.orders.find(order => order.id === parseInt(id));
 
-        if (!order) {
-            return res.status(404).json({ message: `Order with id ${id} not found` });
-        }
-
-        if (order.userId !== userId) {
-            return res.status(403).json({ message: 'Forbidden: You are not the owner of this order' });
-        }
-
-        return res.status(200).json(order);
+        return res.status(200).json({
+            data: order,
+            message: 'Order successfully fetched',
+            timestamp
+        });
     } catch (error) {
-        console.log(error);
-        return res.status(500).json({ error: `Failed to fetch the order with id ${id}` });
+        console.log(`[${timestamp}] User ${req.userId} - Error fetching order with id ${id}: ${error.message}`);
+        return res.status(500).json({
+            timestamp,
+            error: 'Failed to fetch order' 
+        });
     }
 };
 
 controllers.createOrder = (req, res) => {
+    const triggeringUser = req.user ? req.user.username : 'Unknown';
+
     try {
         const { product } = req.body;
         const userId = req.userId;
-        const orderId = uuid.v4();
 
-        const response = { id: orderId, userId: userId, product: product };
+        if (!product) {
+            console.log(`[${timestamp}] User ${triggeringUser} - Product is missing in the request`);
+            return res.status(400).json({ 
+                user: triggeringUser,
+                timestamp,
+                error: 'Product is missing in the request...' 
+            });
+        }
 
-        const orderExists = database.orders.some(order => order.id === orderId);
-        if (orderExists){
-            console.log(`The order with the id <${orderId}> already exists...`);
-            res.status(404).json({ message: `The order with the id <${orderId}> already exists...` });
+        let orderId = Math.floor(Math.random() * 1000);
+        const usedOrderIds = database.orders.map(order => order.id);
+
+        while (usedOrderIds.includes(orderId)) {
+            orderId = Math.floor(Math.random() * 1000);
         }
 
         const user = database.users.find(user => user.id === parseInt(userId));
-        if (!user){
-            console.log(`The user with the id <${userId}> doesn't exist...`);
-            res.status(404).json({ message: `The user with the id <${userId}> doesn't exist...` });
+        if (!user) {
+            console.log(`[${timestamp}] User ${userId} - User does not exist`);
+            return res.status(404).json({ message: `User with id ${userId} does not exist` });
         }
 
+        const response = { id: orderId, userId: userId, product: product };
         database.orders.push(response);
-        res.status(201).json({
+
+        const token = jwt.sign({ userId, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+        console.log(`[${timestamp}] User ${userId} - Order created: ${JSON.stringify(response)}`);
+        return res.status(201).json({
             data: response,
-            message: 'Order has been successfully created!'
+            token,
+            message: 'Order has been successfully created',
+            timestamp,
+            user: triggeringUser
         });
-        console.log(response);
-        console.log('Order has been successfully created!');
     } catch (error) {
-        console.log(error);
-        res.status(500).json({ error: 'Failed to create order...' });
+        console.log(`[${timestamp}] User ${triggeringUser} - Error creating order: ${error}`);
+        return res.status(500).json({ error: 'Failed to create order' });
     }
 };
+
 
 module.exports = controllers;

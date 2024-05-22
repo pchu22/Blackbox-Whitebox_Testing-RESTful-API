@@ -1,20 +1,43 @@
 const jwt = require('jsonwebtoken');
 
 const verifyToken = (req, res, next) => {
-    const token = req.body.accessToken; 
+    const tokenFromBody = req.body.accessToken;
+    const timestamp = new Date().toISOString();
 
-    if (!token) {
-        return res.status(401).json({ error: 'Unauthorized: AccessToken has not been provided' });
+    if (!tokenFromBody) {
+        const user = req.user ? req.user.username : 'Unknown';
+        console.log(`[${timestamp}] Unauthorized access attempted by user: ${user}, AccessToken has not been provided`);
+        return res.status(401).json({
+            timestamp: timestamp,
+            user: user,
+            error: 'AccessToken has not been provided'
+        });
     }
 
-    jwt.verify(token, 'secret-key', (err, decoded) => {
+    jwt.verify(tokenFromBody, process.env.JWT_SECRET, (err, decoded) => {
         if (err) {
-            return res.status(401).json({ error: 'Unauthorized: You provided an invalid AccessToken' });
+            const user = req.user ? req.user.username : 'Unknown';
+            console.log(`[${timestamp}] Unauthorized access attempted by user: ${user}, Invalid AccessToken`);
+            return res.status(401).json({
+                timestamp: timestamp,
+                user: user,
+                error: 'You provided an invalid AccessToken'
+            });
         }
-        const { userId, role } = decoded
-        req.userId = userId;
-        req.role = role;
 
+        if (!decoded.userId || !decoded.role) {
+            const user = req.user ? req.user.username : 'Unknown';
+            console.log(`[${timestamp}] Unauthorized access attempted by user: ${user}, Invalid token payload`);
+            return res.status(401).json({
+                timestamp: timestamp,
+                user: user,
+                error: 'Invalid token payload'
+            });
+        }
+
+        req.decodedToken = decoded;
+        req.userId = decoded.userId;
+        req.role = decoded.role;
         next();
     });
 };
